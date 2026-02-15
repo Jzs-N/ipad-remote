@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>iPad 电脑遥控器 · 触控专享</title>
+    <title>iPad 电脑遥控器 · 真实WebSocket版</title>
     <style>
         * {
             box-sizing: border-box;
@@ -20,7 +20,6 @@
             align-items: center;
             justify-content: center;
             padding: 12px;
-            /* 适配 iPad 大屏也舒适 */
         }
         .remote-container {
             max-width: 1200px;
@@ -34,27 +33,61 @@
             box-shadow: 0 30px 50px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(0, 150, 255, 0.2) inset;
         }
 
-        /* ----- 被控画面 (iPad 上更清晰) ----- */
-        .screen-section {
-            margin-bottom: 22px;
+        /* 连接状态栏 */
+        .connection-bar {
+            background: #0a1a24;
+            border-radius: 60px;
+            padding: 12px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 1px solid #2f6b8a;
         }
-        .screen-label {
-            flex-direction: row;
+        .status-indicator {
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-bottom: 8px;
-            padding-left: 8px;
         }
-        .screen-label span {
-            color: #cceaff;
-            font-weight: 500;
-            font-size: 0.9rem;
-            background: #0f2635;
-            padding: 5px 16px;
+        .led {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #ff5e6b;
+            box-shadow: 0 0 15px #ff3b4a;
+            transition: all 0.3s;
+        }
+        .led.connected {
+            background: #1effb0;
+            box-shadow: 0 0 20px #00ffaa;
+        }
+        .ip-display {
+            background: #122b38;
+            padding: 6px 18px;
             border-radius: 40px;
+            color: #cceaff;
+            font-size: 1rem;
             border: 1px solid #31799b;
-            letter-spacing: 0.3px;
+        }
+        .connect-btn {
+            background: #1f4057;
+            border: none;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 40px;
+            font-size: 1rem;
+            border-bottom: 3px solid #0a1f2b;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .connect-btn:active {
+            transform: translateY(3px);
+            border-bottom-width: 1px;
+        }
+
+        /* 画面区域 */
+        .screen-section {
+            margin-bottom: 22px;
         }
         .live-screen {
             background: #0c1922;
@@ -65,11 +98,6 @@
             width: 100%;
             position: relative;
             overflow: hidden;
-            transition: border 0.2s;
-        }
-        .live-screen.touch-active {
-            border-color: #00c8ff;
-            box-shadow: 0 0 45px #00b3ff;
         }
         .screen-canvas {
             width: 100%;
@@ -80,9 +108,7 @@
                 linear-gradient(rgba(0, 210, 255, 0.03) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(0, 210, 255, 0.03) 1px, transparent 1px);
             background-size: 45px 45px;
-            background-position: center;
         }
-        /* 触控光标 (iPad 上要大一点) */
         .cursor-overlay {
             position: absolute;
             top: 0;
@@ -112,57 +138,9 @@
             color: white;
             font-size: 28px;
             text-shadow: 0 2px 6px black;
-            transform: scale(0.9);
-        }
-        .screen-footer {
-            display: flex;
-            justify-content: space-between;
-            margin-top: 10px;
-            padding: 0 12px;
-            color: #7c9eb3;
-            font-size: 0.85rem;
-            font-weight: 400;
-        }
-        .badge {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .led {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #555;
-        }
-        .led.green {
-            background: #1effb0;
-            box-shadow: 0 0 18px #0affb0;
         }
 
-        /* ----- 触控面板 (针对手指优化) ----- */
-        .control-panel {
-            background: #101e2b;
-            border-radius: 42px;
-            padding: 28px 20px;
-            border: 1px solid #2e6280;
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-        }
-
-        .panel-title {
-            color: #b5defa;
-            font-weight: 500;
-            font-size: 1.3rem;
-            letter-spacing: 0.5px;
-            border-bottom: 2px solid #2b6c8f;
-            padding-bottom: 8px;
-            margin-bottom: 18px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        /* 触控板区域 - 大尺寸适合手指滑动 */
+        /* 触控板 */
         .touchpad-section {
             margin-bottom: 28px;
         }
@@ -171,20 +149,18 @@
             border-radius: 42px;
             padding: 18px;
             border: 2px solid #256882;
-            box-shadow: inset 0 4px 12px #00000080, 0 12px 20px #00000060;
         }
         .touchpad-surface {
             background: #153546;
             border-radius: 36px;
-            height: 240px;  /* 足够高，手指滑动舒服 */
+            height: 240px;
             width: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
-            position: relative;
             border: 2px solid #2d779b;
             box-shadow: 0 0 0 3px #0d202b inset;
-            touch-action: none;  /* 禁止浏览器滚动/缩放 */
+            touch-action: none;
             background-image: radial-gradient(circle at 30px 40px, #3e6f8f 2px, transparent 2px);
             background-size: 65px 65px;
         }
@@ -194,13 +170,12 @@
             padding: 12px 28px;
             border-radius: 60px;
             font-size: 1.3rem;
-            font-weight: 500;
             border: 1px solid #42b0e6;
             backdrop-filter: blur(4px);
             pointer-events: none;
         }
 
-        /* 鼠标按钮 - 加大，方便手指点按 */
+        /* 鼠标按钮 */
         .mouse-buttons {
             display: flex;
             gap: 22px;
@@ -234,10 +209,22 @@
         .btn-mouse.right {
             background: #264c61;
         }
+        .btn-mouse.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
 
-        /* ----- 键盘 (iPad 大按钮) ----- */
+        /* 键盘 */
         .keyboard-section {
             margin-top: 28px;
+        }
+        .panel-title {
+            color: #b5defa;
+            font-weight: 500;
+            font-size: 1.3rem;
+            border-bottom: 2px solid #2b6c8f;
+            padding-bottom: 8px;
+            margin-bottom: 18px;
         }
         .keyboard-grid {
             display: flex;
@@ -281,8 +268,12 @@
             border-bottom-width: 1px;
             background: #2f6682;
         }
+        .key.disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
 
-        /* 宏命令大按钮 */
+        /* 宏命令 */
         .macro-row {
             display: flex;
             gap: 16px;
@@ -315,71 +306,155 @@
         .macro-btn.red {
             background: #623b44;
             border-color: #dd7f97;
-            color: #ffd9e2;
+        }
+        .macro-btn.disabled {
+            opacity: 0.5;
+            pointer-events: none;
         }
 
-        .footer-note {
-            margin-top: 30px;
-            text-align: center;
-            color: #3d708b;
-            font-size: 1rem;
+        /* IP输入弹窗 */
+        .ip-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(10px);
         }
-        /* iPad 横屏下微调 */
-        @media (orientation: landscape) and (min-width: 1024px) {
-            .touchpad-surface {
-                height: 280px;
-            }
-            .key {
-                padding: 24px 0;
-                font-size: 1.7rem;
-            }
+        .ip-modal-content {
+            background: #1a2f3d;
+            padding: 30px;
+            border-radius: 50px;
+            width: 90%;
+            max-width: 500px;
+            border: 2px solid #2ba0cc;
+        }
+        .ip-modal h3 {
+            color: white;
+            margin-top: 0;
+            text-align: center;
+        }
+        .ip-input {
+            width: 100%;
+            padding: 20px;
+            font-size: 1.4rem;
+            background: #0e2432;
+            border: 2px solid #2d779b;
+            color: white;
+            border-radius: 40px;
+            margin: 15px 0;
+            text-align: center;
+        }
+        .ip-modal-buttons {
+            display: flex;
+            gap: 15px;
+        }
+        .ip-modal-btn {
+            flex: 1;
+            padding: 18px;
+            border-radius: 40px;
+            border: none;
+            font-size: 1.2rem;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .ip-modal-btn.save {
+            background: #2ba0cc;
+            color: white;
+        }
+        .ip-modal-btn.cancel {
+            background: #3a4f5c;
+            color: white;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.9);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-size: 1rem;
+            z-index: 9999;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-<div class="remote-container">
-    <!-- 画面模拟 (电脑屏幕) -->
-    <div class="screen-section">
-        <div class="screen-label">
-            <span>💻 远程电脑 (iPad 触控操控)</span>
-        </div>
-        <div class="live-screen" id="liveScreen">
-            <canvas id="screenCanvas" class="screen-canvas" width="1280" height="720"></canvas>
-            <div class="cursor-overlay" id="cursorOverlay">
-                <div class="remote-cursor" id="remoteCursor" style="left: 50%; top: 50%;"></div>
+    <!-- IP输入弹窗 -->
+    <div id="ipModal" class="ip-modal" style="display: none;">
+        <div class="ip-modal-content">
+            <h3>🔌 连接到电脑</h3>
+            <input type="text" id="ipInput" class="ip-input" placeholder="例如: 192.168.1.100" value="">
+            <div class="ip-modal-buttons">
+                <button class="ip-modal-btn save" id="saveIpBtn">连接</button>
+                <button class="ip-modal-btn cancel" id="cancelIpBtn">取消</button>
             </div>
-        </div>
-        <div class="screen-footer">
-            <div class="badge"><span class="led green"></span> 已连接 (模拟) · iPad</div>
-            <div class="badge">📱 滑动触摸板移动光标</div>
         </div>
     </div>
 
-    <!-- 控制区域 100% 触控友好 -->
-    <div class="control-panel">
-        <!-- 触控板 + 左右键 (主要触控区) -->
-        <div class="touchpad-section">
-            <div class="panel-title">🖐️ 触控板 · 手指滑动</div>
-            <div class="touchpad-container">
-                <div class="touchpad-surface" id="touchpadSurface">
-                    <span class="touch-hint" id="touchpadHint">← 拖拽移动光标 →</span>
-                </div>
-                <div class="mouse-buttons">
-                    <button class="btn-mouse" id="leftClickBtn"><span>🖱️ 左键</span></button>
-                    <button class="btn-mouse right" id="rightClickBtn"><span>🍔 右键</span></button>
+    <!-- Toast提示 -->
+    <div id="toast" class="toast"></div>
+
+    <div class="remote-container">
+        <!-- 连接状态栏 -->
+        <div class="connection-bar">
+            <div class="status-indicator">
+                <span class="led" id="statusLed"></span>
+                <span id="statusText" class="ip-display">未连接</span>
+            </div>
+            <div class="status-indicator">
+                <span id="ipDisplay" class="ip-display">未设置IP</span>
+                <button class="connect-btn" id="settingsBtn">⚙️ 设置</button>
+                <button class="connect-btn" id="reconnectBtn">🔄 重连</button>
+            </div>
+        </div>
+
+        <!-- 画面区域 -->
+        <div class="screen-section">
+            <div class="live-screen" id="liveScreen">
+                <canvas id="screenCanvas" class="screen-canvas" width="1280" height="720"></canvas>
+                <div class="cursor-overlay">
+                    <div class="remote-cursor" id="remoteCursor" style="left: 50%; top: 50%;"></div>
                 </div>
             </div>
         </div>
 
-        <!-- 常用键盘 (大按钮布局) -->
+        <!-- 触控板区域 -->
+        <div class="touchpad-section">
+            <div class="panel-title">🖐️ 触控板</div>
+            <div class="touchpad-container">
+                <div class="touchpad-surface" id="touchpadSurface">
+                    <span class="touch-hint" id="touchpadHint">← 滑动移动光标 →</span>
+                </div>
+                <div class="mouse-buttons">
+                    <button class="btn-mouse" id="leftClickBtn">左键</button>
+                    <button class="btn-mouse right" id="rightClickBtn">右键</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 键盘区域 -->
         <div class="keyboard-section">
-            <div class="panel-title">⌨️ 键盘 (轻触模拟)</div>
+            <div class="panel-title">⌨️ 键盘</div>
             <div class="keyboard-grid">
                 <div class="key-row">
-                    <div class="key special" data-key="Esc">Esc</div>
+                    <div class="key special" data-key="Escape">Esc</div>
                     <div class="key special" data-key="Tab">Tab</div>
-                    <div class="key special" data-key="Ctrl">Ctrl</div>
+                    <div class="key special" data-key="Control">Ctrl</div>
                     <div class="key special" data-key="Alt">Alt</div>
+                    <div class="key special" data-key="Meta">Win</div>
                 </div>
                 <div class="key-row">
                     <div class="key" data-key="q">Q</div>
@@ -390,6 +465,8 @@
                     <div class="key" data-key="y">Y</div>
                     <div class="key" data-key="u">U</div>
                     <div class="key" data-key="i">I</div>
+                    <div class="key" data-key="o">O</div>
+                    <div class="key" data-key="p">P</div>
                 </div>
                 <div class="key-row">
                     <div class="key" data-key="a">A</div>
@@ -400,6 +477,7 @@
                     <div class="key" data-key="h">H</div>
                     <div class="key" data-key="j">J</div>
                     <div class="key" data-key="k">K</div>
+                    <div class="key" data-key="l">L</div>
                 </div>
                 <div class="key-row">
                     <div class="key" data-key="z">Z</div>
@@ -414,332 +492,357 @@
                     <div class="key special" data-key="Shift">Shift</div>
                     <div class="key space" data-key=" ">空格</div>
                     <div class="key special" data-key="Enter">↵ Enter</div>
+                    <div class="key special" data-key="Backspace">⌫ 删除</div>
                 </div>
             </div>
         </div>
 
-        <!-- 系统指令 -->
+        <!-- 宏命令 -->
         <div class="macro-row">
-            <button class="macro-btn" id="screenshotBtn"><span>📸 截屏</span></button>
-            <button class="macro-btn" id="lockPcBtn"><span>🔒 锁定电脑</span></button>
-            <button class="macro-btn red" id="shutdownBtn"><span>⏻ 关机模拟</span></button>
+            <button class="macro-btn" id="screenshotBtn">📸 截屏</button>
+            <button class="macro-btn" id="lockBtn">🔒 锁定电脑</button>
+            <button class="macro-btn red" id="shutdownBtn">⏻ 关机</button>
         </div>
     </div>
-    <div class="footer-note">
-        ⚡ 通过 WebSocket 控制电脑 (模拟指令发送，可替换为真实后端)
-    </div>
-</div>
 
-<script>
-    (function() {
-        // --- 模拟 WebSocket （实际使用时替换为真实WebSocket）---
-        const ws = {
-            send: (message) => {
-                console.log('📲 [iPad→电脑]', JSON.stringify(message));
-                // 在这里可以换成实际WebSocket发送
-                // 例如 realWS.send(JSON.stringify(message));
-                updateRemoteCursorFromMessage(message);
-                simulateEffect(message);
+    <script>
+        // ==================== WebSocket管理器 ====================
+        class WebSocketManager {
+            constructor() {
+                this.ws = null;
+                this.ip = localStorage.getItem('pc-server-ip') || '';
+                this.port = '8080';
+                this.connected = false;
+                this.reconnectAttempts = 0;
+                this.maxReconnectAttempts = 5;
+                this.messageHandlers = new Map();
+                
+                this.init();
             }
-        };
 
-        // UI 元素
-        const touchSurface = document.getElementById('touchpadSurface');
-        const cursor = document.getElementById('remoteCursor');
-        const liveScreen = document.getElementById('liveScreen');
-        const leftBtn = document.getElementById('leftClickBtn');
-        const rightBtn = document.getElementById('rightClickBtn');
-        const hint = document.getElementById('touchpadHint');
-        const screenshotBtn = document.getElementById('screenshotBtn');
-        const lockBtn = document.getElementById('lockPcBtn');
-        const shutdownBtn = document.getElementById('shutdownBtn');
+            init() {
+                // 注册默认处理器
+                this.registerHandler('connected', (data) => {
+                    this.showToast(`✅ 已连接到电脑 (${data.screen.width}x${data.screen.height})`, '#00ffaa');
+                    this.updateControls(true);
+                });
 
-        // 光标归一化位置 (0~1)
-        let cursorNormX = 0.5, cursorNormY = 0.5;
+                this.registerHandler('error', (data) => {
+                    this.showToast(`❌ ${data.message}`, '#ff5e6b');
+                });
 
-        // 更新光标在画面上的位置
-        function setCursorPosition(xNorm, yNorm) {
-            const screenRect = liveScreen.getBoundingClientRect();
-            const x = Math.min(screenRect.width, Math.max(0, xNorm * screenRect.width));
-            const y = Math.min(screenRect.height, Math.max(0, yNorm * screenRect.height));
-            cursor.style.left = x + 'px';
-            cursor.style.top = y + 'px';
-            cursorNormX = xNorm;
-            cursorNormY = yNorm;
-        }
+                this.registerHandler('pong', () => {
+                    console.log('收到心跳响应');
+                });
 
-        // 初始居中
-        setCursorPosition(0.5, 0.5);
+                // 如果有保存的IP，自动连接
+                if (this.ip) {
+                    setTimeout(() => this.connect(), 1000);
+                }
+            }
 
-        // --- 触控板相对滑动 (支持多指/单指) ---
-        let isTouching = false;
-        let lastTouchX = 0, lastTouchY = 0;
+            connect() {
+                if (!this.ip) {
+                    this.showToast('请先设置IP地址', '#ffaa00');
+                    return;
+                }
 
-        function handleTouchStart(e) {
-            e.preventDefault();
-            const touch = e.touches[0];
-            if (!touch) return;
-            isTouching = true;
-            lastTouchX = touch.clientX;
-            lastTouchY = touch.clientY;
-            hint.innerText = '👆 正在移动光标';
-            liveScreen.classList.add('touch-active');
-        }
+                const wsUrl = `ws://${this.ip}:${this.port}`;
+                this.updateStatus('connecting', '连接中...', '#ffaa00');
+                
+                try {
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onopen = () => {
+                        console.log('WebSocket连接成功');
+                        this.connected = true;
+                        this.reconnectAttempts = 0;
+                        this.updateStatus('connected', `已连接 (${this.ip})`, '#1effb0');
+                        this.showToast('✅ 连接成功', '#00ffaa');
+                        this.updateControls(true);
+                        
+                        // 启动心跳
+                        this.startHeartbeat();
+                    };
+                    
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            this.handleMessage(data);
+                        } catch (e) {
+                            console.error('解析消息失败:', e);
+                        }
+                    };
+                    
+                    this.ws.onclose = () => {
+                        console.log('WebSocket断开');
+                        this.connected = false;
+                        this.updateStatus('disconnected', '已断开', '#ff5e6b');
+                        this.updateControls(false);
+                        
+                        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                            this.reconnectAttempts++;
+                            const delay = 2000 * this.reconnectAttempts;
+                            this.updateStatus('reconnecting', `重连中 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, '#ffaa00');
+                            setTimeout(() => this.connect(), delay);
+                        } else {
+                            this.showToast('❌ 重连失败，请手动重连', '#ff5e6b');
+                        }
+                    };
+                    
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket错误:', error);
+                        this.showToast('⚠️ 连接错误', '#ffaa00');
+                    };
+                    
+                } catch (error) {
+                    console.error('创建WebSocket失败:', error);
+                    this.showToast('❌ 连接失败', '#ff5e6b');
+                }
+            }
 
-        function handleTouchMove(e) {
-            e.preventDefault();
-            if (!isTouching) return;
-            const touch = e.touches[0];
-            if (!touch) return;
+            disconnect() {
+                if (this.ws) {
+                    this.ws.close();
+                    this.ws = null;
+                    this.connected = false;
+                    this.updateStatus('disconnected', '已断开', '#ff5e6b');
+                    this.updateControls(false);
+                }
+            }
 
-            const dx = touch.clientX - lastTouchX;
-            const dy = touch.clientY - lastTouchY;
+            send(type, data = {}) {
+                if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                    this.showToast('⚠️ 未连接到电脑', '#ffaa00');
+                    return false;
+                }
+                
+                const message = {
+                    type: type,
+                    ...data,
+                    timestamp: Date.now()
+                };
+                
+                try {
+                    this.ws.send(JSON.stringify(message));
+                    return true;
+                } catch (error) {
+                    console.error('发送失败:', error);
+                    return false;
+                }
+            }
 
-            // 灵敏度调节 (适合iPad大屏，系数稍低，移动更精准)
-            const sens = 0.004;
-            let newX = cursorNormX + dx * sens;
-            let newY = cursorNormY + dy * sens;
-            newX = Math.min(1, Math.max(0, newX));
-            newY = Math.min(1, Math.max(0, newY));
+            registerHandler(type, handler) {
+                this.messageHandlers.set(type, handler);
+            }
 
-            // 发送移动指令
-            ws.send({
-                type: 'mouse-move',
-                x: newX,
-                y: newY,
-                dx: dx,
-                dy: dy,
-                source: 'ipad-touchpad'
-            });
+            handleMessage(data) {
+                const handler = this.messageHandlers.get(data.type);
+                if (handler) {
+                    handler(data);
+                }
+            }
 
-            // 更新光标显示
-            setCursorPosition(newX, newY);
+            startHeartbeat() {
+                setInterval(() => {
+                    if (this.connected) {
+                        this.send('ping');
+                    }
+                }, 30000);
+            }
 
-            lastTouchX = touch.clientX;
-            lastTouchY = touch.clientY;
-        }
+            updateStatus(status, text, color) {
+                const led = document.getElementById('statusLed');
+                const statusText = document.getElementById('statusText');
+                const ipDisplay = document.getElementById('ipDisplay');
+                
+                if (led) {
+                    led.style.background = color;
+                    led.style.boxShadow = `0 0 20px ${color}`;
+                }
+                if (statusText) {
+                    statusText.textContent = text;
+                }
+                if (ipDisplay && this.ip) {
+                    ipDisplay.textContent = this.ip;
+                }
+            }
 
-        function handleTouchEnd(e) {
-            e.preventDefault();
-            isTouching = false;
-            hint.innerText = '← 拖拽移动光标 →';
-            liveScreen.classList.remove('touch-active');
-        }
+            updateControls(enabled) {
+                const elements = document.querySelectorAll('.btn-mouse, .key, .macro-btn');
+                elements.forEach(el => {
+                    if (enabled) {
+                        el.classList.remove('disabled');
+                    } else {
+                        el.classList.add('disabled');
+                    }
+                });
+            }
 
-        // 绑定触摸事件
-        touchSurface.addEventListener('touchstart', handleTouchStart, { passive: false });
-        touchSurface.addEventListener('touchmove', handleTouchMove, { passive: false });
-        touchSurface.addEventListener('touchend', handleTouchEnd);
-        touchSurface.addEventListener('touchcancel', handleTouchEnd);
+            showToast(message, color) {
+                const toast = document.getElementById('toast');
+                toast.textContent = message;
+                toast.style.background = color + '20';
+                toast.style.borderColor = color;
+                toast.style.color = color;
+                toast.style.opacity = '1';
+                
+                setTimeout(() => {
+                    toast.style.opacity = '0';
+                }, 2000);
+            }
 
-        // 防止鼠标事件干扰(但保留鼠标调试)
-        touchSurface.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-        });
-
-        // --- 鼠标左右键 (触摸版) ---
-        function setButtonActive(btn, active) {
-            if (active) {
-                btn.style.transform = 'translateY(8px)';
-                btn.style.boxShadow = '0 4px 0 #08212b';
-            } else {
-                btn.style.transform = '';
-                btn.style.boxShadow = '0 12px 0 #08212b';
+            setIp(ip) {
+                this.ip = ip;
+                localStorage.setItem('pc-server-ip', ip);
+                document.getElementById('ipDisplay').textContent = ip;
+                this.disconnect();
+                setTimeout(() => this.connect(), 500);
             }
         }
 
-        leftBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            setButtonActive(leftBtn, true);
-            ws.send({ type: 'mouse-down', button: 'left' });
-        });
-        leftBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            setButtonActive(leftBtn, false);
-            ws.send({ type: 'mouse-up', button: 'left' });
-        });
-        leftBtn.addEventListener('touchcancel', (e) => {
-            e.preventDefault();
-            setButtonActive(leftBtn, false);
-            ws.send({ type: 'mouse-up', button: 'left' });
-        });
-
-        rightBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            setButtonActive(rightBtn, true);
-            ws.send({ type: 'mouse-down', button: 'right' });
-        });
-        rightBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            setButtonActive(rightBtn, false);
-            ws.send({ type: 'mouse-up', button: 'right' });
-        });
-        rightBtn.addEventListener('touchcancel', (e) => {
-            e.preventDefault();
-            setButtonActive(rightBtn, false);
-            ws.send({ type: 'mouse-up', button: 'right' });
-        });
-
-        // 兼容鼠标（开发调试）
-        leftBtn.addEventListener('mousedown', () => { setButtonActive(leftBtn, true); ws.send({ type: 'mouse-down', button: 'left' }); });
-        leftBtn.addEventListener('mouseup', () => { setButtonActive(leftBtn, false); ws.send({ type: 'mouse-up', button: 'left' }); });
-        leftBtn.addEventListener('mouseleave', () => { setButtonActive(leftBtn, false); ws.send({ type: 'mouse-up', button: 'left' }); });
-        rightBtn.addEventListener('mousedown', () => { setButtonActive(rightBtn, true); ws.send({ type: 'mouse-down', button: 'right' }); });
-        rightBtn.addEventListener('mouseup', () => { setButtonActive(rightBtn, false); ws.send({ type: 'mouse-up', button: 'right' }); });
-        rightBtn.addEventListener('mouseleave', () => { setButtonActive(rightBtn, false); ws.send({ type: 'mouse-up', button: 'right' }); });
-
-        // --- 键盘按钮 (触控) ---
-        const keys = document.querySelectorAll('.key');
-        keys.forEach(key => {
-            // 触摸事件
-            key.addEventListener('touchstart', (e) => {
+        // ==================== 初始化 ====================
+        let wsManager;
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            wsManager = new WebSocketManager();
+            
+            // 光标位置
+            let cursorX = 0.5, cursorY = 0.5;
+            const cursor = document.getElementById('remoteCursor');
+            const liveScreen = document.getElementById('liveScreen');
+            
+            function updateCursorPosition(x, y) {
+                const rect = liveScreen.getBoundingClientRect();
+                cursor.style.left = (x * rect.width) + 'px';
+                cursor.style.top = (y * rect.height) + 'px';
+            }
+            
+            // 触控板事件
+            const touchpad = document.getElementById('touchpadSurface');
+            let isTouching = false;
+            let lastX, lastY;
+            
+            touchpad.addEventListener('touchstart', (e) => {
                 e.preventDefault();
-                const keyVal = key.dataset.key || '';
-                key.style.transform = 'translateY(6px)';
-                key.style.boxShadow = '0 2px 0 #102634';
-                ws.send({ type: 'key-down', key: keyVal });
+                const touch = e.touches[0];
+                isTouching = true;
+                lastX = touch.clientX;
+                lastY = touch.clientY;
+                document.getElementById('touchpadHint').textContent = '👆 正在移动';
             });
-            key.addEventListener('touchend', (e) => {
+            
+            touchpad.addEventListener('touchmove', (e) => {
                 e.preventDefault();
-                const keyVal = key.dataset.key || '';
-                key.style.transform = '';
-                key.style.boxShadow = '0 7px 0 #102634, 0 6px 16px black';
-                ws.send({ type: 'key-up', key: keyVal });
+                if (!isTouching) return;
+                
+                const touch = e.touches[0];
+                const dx = touch.clientX - lastX;
+                const dy = touch.clientY - lastY;
+                
+                // 发送相对移动
+                wsManager.send('mouse-move', { dx, dy });
+                
+                // 更新光标显示
+                cursorX = Math.min(1, Math.max(0, cursorX + dx * 0.002));
+                cursorY = Math.min(1, Math.max(0, cursorY + dy * 0.002));
+                updateCursorPosition(cursorX, cursorY);
+                
+                lastX = touch.clientX;
+                lastY = touch.clientY;
             });
-            key.addEventListener('touchcancel', (e) => {
+            
+            touchpad.addEventListener('touchend', () => {
+                isTouching = false;
+                document.getElementById('touchpadHint').textContent = '← 滑动移动光标 →';
+            });
+            
+            // 鼠标按钮
+            document.getElementById('leftClickBtn').addEventListener('touchstart', (e) => {
                 e.preventDefault();
-                key.style.transform = '';
-                key.style.boxShadow = '0 7px 0 #102634, 0 6px 16px black';
-                const keyVal = key.dataset.key || '';
-                ws.send({ type: 'key-up', key: keyVal });
+                wsManager.send('mouse-down', { button: 'left' });
             });
-
-            // 鼠标事件（调试用）
-            key.addEventListener('mousedown', () => {
-                key.style.transform = 'translateY(6px)';
-                key.style.boxShadow = '0 2px 0 #102634';
-                ws.send({ type: 'key-down', key: key.dataset.key || '' });
+            
+            document.getElementById('leftClickBtn').addEventListener('touchend', (e) => {
+                e.preventDefault();
+                wsManager.send('mouse-up', { button: 'left' });
             });
-            key.addEventListener('mouseup', () => {
-                key.style.transform = '';
-                key.style.boxShadow = '0 7px 0 #102634, 0 6px 16px black';
-                ws.send({ type: 'key-up', key: key.dataset.key || '' });
+            
+            document.getElementById('rightClickBtn').addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                wsManager.send('mouse-down', { button: 'right' });
             });
-            key.addEventListener('mouseleave', () => {
-                if (key.style.transform === 'translateY(6px)') {
+            
+            document.getElementById('rightClickBtn').addEventListener('touchend', (e) => {
+                e.preventDefault();
+                wsManager.send('mouse-up', { button: 'right' });
+            });
+            
+            // 键盘按钮
+            document.querySelectorAll('.key').forEach(key => {
+                key.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const keyVal = key.dataset.key;
+                    wsManager.send('key-down', { key: keyVal });
+                    key.style.transform = 'translateY(6px)';
+                });
+                
+                key.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    const keyVal = key.dataset.key;
+                    wsManager.send('key-up', { key: keyVal });
                     key.style.transform = '';
-                    key.style.boxShadow = '0 7px 0 #102634, 0 6px 16px black';
-                    ws.send({ type: 'key-up', key: key.dataset.key || '' });
+                });
+            });
+            
+            // 宏命令
+            document.getElementById('screenshotBtn').addEventListener('click', () => {
+                wsManager.send('screenshot');
+            });
+            
+            document.getElementById('lockBtn').addEventListener('click', () => {
+                wsManager.send('lock');
+            });
+            
+            document.getElementById('shutdownBtn').addEventListener('click', () => {
+                if (confirm('确定要关机吗？')) {
+                    wsManager.send('shutdown');
                 }
             });
-        });
-
-        // --- 宏指令 (触控优化) ---
-        function macroTouchEffect(btn) {
-            btn.style.transform = 'translateY(8px)';
-            btn.style.boxShadow = '0 4px 0 #09303f';
-            setTimeout(() => {
-                btn.style.transform = '';
-                btn.style.boxShadow = '0 12px 0 #09303f';
-            }, 120);
-        }
-
-        screenshotBtn.addEventListener('touchstart', (e) => e.preventDefault());
-        screenshotBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            macroTouchEffect(screenshotBtn);
-            ws.send({ type: 'screenshot' });
-        });
-        lockBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            macroTouchEffect(lockBtn);
-            ws.send({ type: 'lock' });
-        });
-        shutdownBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            if (confirm('发送关机指令？(模拟)')) {
-                macroTouchEffect(shutdownBtn);
-                ws.send({ type: 'shutdown' });
-            }
-        });
-
-        // 鼠标点击兼容
-        screenshotBtn.addEventListener('click', () => { ws.send({ type: 'screenshot' }); });
-        lockBtn.addEventListener('click', () => { ws.send({ type: 'lock' }); });
-        shutdownBtn.addEventListener('click', () => { if (confirm('关机模拟?')) ws.send({ type: 'shutdown' }); });
-
-        // --- 模拟效果 (视觉反馈) ---
-        function simulateEffect(msg) {
+            
+            // 设置按钮
+            document.getElementById('settingsBtn').addEventListener('click', () => {
+                document.getElementById('ipModal').style.display = 'flex';
+                document.getElementById('ipInput').value = wsManager.ip || '';
+            });
+            
+            document.getElementById('reconnectBtn').addEventListener('click', () => {
+                wsManager.disconnect();
+                setTimeout(() => wsManager.connect(), 1000);
+            });
+            
+            document.getElementById('saveIpBtn').addEventListener('click', () => {
+                const ip = document.getElementById('ipInput').value.trim();
+                if (ip) {
+                    wsManager.setIp(ip);
+                    document.getElementById('ipModal').style.display = 'none';
+                }
+            });
+            
+            document.getElementById('cancelIpBtn').addEventListener('click', () => {
+                document.getElementById('ipModal').style.display = 'none';
+            });
+            
+            // 绘制canvas背景
             const canvas = document.getElementById('screenCanvas');
             const ctx = canvas.getContext('2d');
-            if (msg.type === 'screenshot') {
-                ctx.fillStyle = 'white';
-                ctx.globalAlpha = 0.4;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.globalAlpha = 1;
-                ctx.font = 'bold 70px system-ui';
-                ctx.fillStyle = '#00ddff';
-                ctx.fillText('📸', 550, 370);
-                setTimeout(() => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    drawCanvasGrid(ctx);
-                }, 300);
-            } else if (msg.type === 'lock') {
-                liveScreen.style.filter = 'brightness(0.4) blur(3px)';
-                setTimeout(() => liveScreen.style.filter = '', 500);
-            } else if (msg.type === 'shutdown') {
-                document.body.style.opacity = '0.7';
-                setTimeout(() => document.body.style.opacity = '1', 700);
-            }
-        }
-
-        // 更新光标 (从消息)
-        function updateRemoteCursorFromMessage(msg) {
-            if (msg.type === 'mouse-move' && msg.x !== undefined && msg.y !== undefined) {
-                setCursorPosition(msg.x, msg.y);
-            }
-        }
-
-        // 绘制canvas网格背景
-        function drawCanvasGrid(ctx) {
-            const w = ctx.canvas.width;
-            const h = ctx.canvas.height;
-            ctx.clearRect(0, 0, w, h);
-            ctx.strokeStyle = '#1288aa';
-            ctx.lineWidth = 0.5;
-            for (let i = 0; i <= w; i += 50) {
-                ctx.beginPath();
-                ctx.moveTo(i, 0);
-                ctx.lineTo(i, h);
-                ctx.strokeStyle = '#20a0c0';
-                ctx.stroke();
-            }
-            for (let i = 0; i <= h; i += 50) {
-                ctx.beginPath();
-                ctx.moveTo(0, i);
-                ctx.lineTo(w, i);
-                ctx.strokeStyle = '#20a0c0';
-                ctx.stroke();
-            }
-            ctx.font = '26px system-ui, -apple-system';
-            ctx.fillStyle = '#ccf0ff';
-            ctx.fillText('iPad 远程画面', 60, 100);
-        }
-
-        window.onload = () => {
-            const canvas = document.getElementById('screenCanvas');
-            const ctx = canvas.getContext('2d');
-            drawCanvasGrid(ctx);
-        };
-
-        // 阻止一切页面滚动/缩放 (为了触控板不干扰)
-        document.body.addEventListener('touchmove', (e) => {
-            if (e.target === touchSurface || e.target.closest('.touchpad-surface')) {
-                e.preventDefault();
-            }
-        }, { passive: false });
-        document.body.addEventListener('gesturestart', (e) => e.preventDefault());
-    })();
-</script>
+            ctx.fillStyle = '#20a0c0';
+            ctx.font = '24px system-ui';
+            ctx.fillText('等待连接...', 50, 100);
+            
+            // 初始化光标
+            updateCursorPosition(0.5, 0.5);
+        });
+    </script>
 </body>
 </html>
