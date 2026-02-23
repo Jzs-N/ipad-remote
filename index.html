@@ -433,7 +433,7 @@
 
         <!-- 触控板区域 -->
         <div class="touchpad-section">
-            <div class="panel-title">🖐️ 触控板</div>
+            <div class="panel-title">触控板</div>
             <div class="touchpad-container">
                 <div class="touchpad-surface" id="touchpadSurface">
                     <span class="touch-hint" id="touchpadHint">← 滑动移动光标 →</span>
@@ -447,7 +447,7 @@
 
         <!-- 键盘区域 -->
         <div class="keyboard-section">
-            <div class="panel-title">⌨️ 键盘</div>
+            <div class="panel-title">键盘</div>
             <div class="keyboard-grid">
                 <div class="key-row">
                     <div class="key special" data-key="Escape">Esc</div>
@@ -729,7 +729,7 @@
                 isTouching = true;
                 lastX = touch.clientX;
                 lastY = touch.clientY;
-                document.getElementById('touchpadHint').textContent = '👆 正在移动';
+                document.getElementById('touchpadHint').textContent = '正在移动...';
             });
             
             touchpad.addEventListener('touchmove', (e) => {
