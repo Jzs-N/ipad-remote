@@ -1,848 +1,261 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>iPad 电脑遥控器 · 真实WebSocket版</title>
-    <style>
-        * {
-            box-sizing: border-box;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            user-select: none;
-            -webkit-tap-highlight-color: transparent;
-        }
-        body {
-            min-height: 100vh;
-            margin: 0;
-            background: #0b1117;
-            background: radial-gradient(circle at 30% 20%, #1e2c38, #0a121b);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 12px;
-        }
-        .remote-container {
-            max-width: 1200px;
-            width: 100%;
-            background: rgba(18, 28, 36, 0.9);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(64, 164, 235, 0.3);
-            border-radius: 48px;
-            padding: 22px;
-            box-shadow: 0 30px 50px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(0, 150, 255, 0.2) inset;
+<script>
+    // ==================== WebSocket管理器 ====================
+    class WebSocketManager {
+        constructor() {
+            this.ws = null;
+            this.ip = localStorage.getItem('pc-server-ip') || '';
+            this.port = '8080';
+            this.connected = false;
+            this.reconnectAttempts = 0;
+            this.maxReconnectAttempts = 5;
+            this.messageHandlers = new Map();
+            
+            this.init();
         }
 
-        /* 连接状态栏 */
-        .connection-bar {
-            background: #0a1a24;
-            border-radius: 60px;
-            padding: 12px 20px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            border: 1px solid #2f6b8a;
-        }
-        .status-indicator {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .led {
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: #ff5e6b;
-            box-shadow: 0 0 15px #ff3b4a;
-            transition: all 0.3s;
-        }
-        .led.connected {
-            background: #1effb0;
-            box-shadow: 0 0 20px #00ffaa;
-        }
-        .ip-display {
-            background: #122b38;
-            padding: 6px 18px;
-            border-radius: 40px;
-            color: #cceaff;
-            font-size: 1rem;
-            border: 1px solid #31799b;
-        }
-        .connect-btn {
-            background: #1f4057;
-            border: none;
-            color: white;
-            padding: 8px 20px;
-            border-radius: 40px;
-            font-size: 1rem;
-            border-bottom: 3px solid #0a1f2b;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-        .connect-btn:active {
-            transform: translateY(3px);
-            border-bottom-width: 1px;
+        init() {
+            this.registerHandler('connected', (data) => {
+                this.showToast(`✅ 已连接到电脑 (${data.screen.width}x${data.screen.height})`, '#00ffaa');
+                this.updateControls(true);
+            });
+
+            this.registerHandler('error', (data) => {
+                this.showToast(`❌ ${data.message}`, '#ff5e6b');
+            });
+
+            this.registerHandler('pong', () => {});
+
+            if (this.ip) {
+                setTimeout(() => this.connect(), 1000);
+            }
         }
 
-        /* 画面区域 */
-        .screen-section {
-            margin-bottom: 22px;
-        }
-        .live-screen {
-            background: #0c1922;
-            border-radius: 38px;
-            border: 3px solid #1f4b64;
-            box-shadow: 0 0 35px rgba(0, 170, 255, 0.25);
-            aspect-ratio: 16 / 9;
-            width: 100%;
-            position: relative;
-            overflow: hidden;
-        }
-        .screen-canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-            background: #0d1a24;
-            background-image: 
-                linear-gradient(rgba(0, 210, 255, 0.03) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(0, 210, 255, 0.03) 1px, transparent 1px);
-            background-size: 45px 45px;
-        }
-        .cursor-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-        }
-        .remote-cursor {
-            position: absolute;
-            width: 32px;
-            height: 32px;
-            background: rgba(255, 80, 130, 0.95);
-            border: 3px solid white;
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            box-shadow: 0 0 25px #ff99bb;
-            transition: all 0.02s linear;
-            pointer-events: none;
-            z-index: 25;
-        }
-        .remote-cursor::after {
-            content: "●";
-            position: absolute;
-            top: -26px;
-            left: 10px;
-            color: white;
-            font-size: 28px;
-            text-shadow: 0 2px 6px black;
-        }
-
-        /* 触控板 */
-        .touchpad-section {
-            margin-bottom: 28px;
-        }
-        .touchpad-container {
-            background: #0c1f2d;
-            border-radius: 42px;
-            padding: 18px;
-            border: 2px solid #256882;
-        }
-        .touchpad-surface {
-            background: #153546;
-            border-radius: 36px;
-            height: 240px;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid #2d779b;
-            box-shadow: 0 0 0 3px #0d202b inset;
-            touch-action: none;
-            background-image: radial-gradient(circle at 30px 40px, #3e6f8f 2px, transparent 2px);
-            background-size: 65px 65px;
-        }
-        .touch-hint {
-            color: #beddf5;
-            background: #08212ec4;
-            padding: 12px 28px;
-            border-radius: 60px;
-            font-size: 1.3rem;
-            border: 1px solid #42b0e6;
-            backdrop-filter: blur(4px);
-            pointer-events: none;
-        }
-
-        /* 鼠标按钮 */
-        .mouse-buttons {
-            display: flex;
-            gap: 22px;
-            margin-top: 22px;
-            justify-content: center;
-        }
-        .btn-mouse {
-            background: #1d3d54;
-            border: none;
-            border-bottom: 6px solid #0a1c2a;
-            color: white;
-            font-size: 1.6rem;
-            font-weight: 600;
-            padding: 24px 10px;
-            border-radius: 80px;
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            box-shadow: 0 12px 0 #08212b;
-            transition: 0.06s;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-        .btn-mouse:active {
-            transform: translateY(8px);
-            box-shadow: 0 4px 0 #08212b;
-            border-bottom-width: 3px;
-        }
-        .btn-mouse.right {
-            background: #264c61;
-        }
-        .btn-mouse.disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        /* 键盘 */
-        .keyboard-section {
-            margin-top: 28px;
-        }
-        .panel-title {
-            color: #b5defa;
-            font-weight: 500;
-            font-size: 1.3rem;
-            border-bottom: 2px solid #2b6c8f;
-            padding-bottom: 8px;
-            margin-bottom: 18px;
-        }
-        .keyboard-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .key-row {
-            display: flex;
-            gap: 12px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-        .key {
-            background: #1e3d54;
-            border-radius: 26px;
-            padding: 20px 0;
-            flex: 1 0 auto;
-            min-width: 70px;
-            text-align: center;
-            color: #ecf9ff;
-            font-weight: 600;
-            font-size: 1.5rem;
-            box-shadow: 0 7px 0 #102634, 0 6px 16px black;
-            border-bottom: 3px solid #2b799b;
-            transition: 0.05s;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-        .key.special {
-            background: #274f69;
-            font-size: 1.3rem;
-            flex: 1.3;
-        }
-        .key.space {
-            flex: 5;
-            min-width: 180px;
-        }
-        .key:active {
-            transform: translateY(6px);
-            box-shadow: 0 2px 0 #102634;
-            border-bottom-width: 1px;
-            background: #2f6682;
-        }
-        .key.disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        /* 宏命令 */
-        .macro-row {
-            display: flex;
-            gap: 16px;
-            margin-top: 32px;
-            flex-wrap: wrap;
-        }
-        .macro-btn {
-            background: #114155;
-            border: 2px solid #2ba0cc;
-            color: #e0f3ff;
-            padding: 24px 20px;
-            border-radius: 60px;
-            font-size: 1.5rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            box-shadow: 0 12px 0 #09303f;
-            cursor: pointer;
-            transition: 0.06s;
-            flex: 1;
-            touch-action: manipulation;
-            min-width: 180px;
-        }
-        .macro-btn:active {
-            transform: translateY(8px);
-            box-shadow: 0 4px 0 #09303f;
-        }
-        .macro-btn.red {
-            background: #623b44;
-            border-color: #dd7f97;
-        }
-        .macro-btn.disabled {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        /* IP输入弹窗 */
-        .ip-modal {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 10000;
-            backdrop-filter: blur(10px);
-        }
-        .ip-modal-content {
-            background: #1a2f3d;
-            padding: 30px;
-            border-radius: 50px;
-            width: 90%;
-            max-width: 500px;
-            border: 2px solid #2ba0cc;
-        }
-        .ip-modal h3 {
-            color: white;
-            margin-top: 0;
-            text-align: center;
-        }
-        .ip-input {
-            width: 100%;
-            padding: 20px;
-            font-size: 1.4rem;
-            background: #0e2432;
-            border: 2px solid #2d779b;
-            color: white;
-            border-radius: 40px;
-            margin: 15px 0;
-            text-align: center;
-        }
-        .ip-modal-buttons {
-            display: flex;
-            gap: 15px;
-        }
-        .ip-modal-btn {
-            flex: 1;
-            padding: 18px;
-            border-radius: 40px;
-            border: none;
-            font-size: 1.2rem;
-            cursor: pointer;
-            touch-action: manipulation;
-        }
-        .ip-modal-btn.save {
-            background: #2ba0cc;
-            color: white;
-        }
-        .ip-modal-btn.cancel {
-            background: #3a4f5c;
-            color: white;
-        }
-
-        .toast {
-            position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.9);
-            color: white;
-            padding: 12px 24px;
-            border-radius: 40px;
-            font-size: 1rem;
-            z-index: 9999;
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.2);
-            opacity: 0;
-            transition: opacity 0.3s;
-            pointer-events: none;
-        }
-    </style>
-</head>
-<body>
-    <!-- IP输入弹窗 -->
-    <div id="ipModal" class="ip-modal" style="display: none;">
-        <div class="ip-modal-content">
-            <h3>🔌 连接到电脑</h3>
-            <input type="text" id="ipInput" class="ip-input" placeholder="例如: 192.168.1.100" value="">
-            <div class="ip-modal-buttons">
-                <button class="ip-modal-btn save" id="saveIpBtn">连接</button>
-                <button class="ip-modal-btn cancel" id="cancelIpBtn">取消</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast提示 -->
-    <div id="toast" class="toast"></div>
-
-    <div class="remote-container">
-        <!-- 连接状态栏 -->
-        <div class="connection-bar">
-            <div class="status-indicator">
-                <span class="led" id="statusLed"></span>
-                <span id="statusText" class="ip-display">未连接</span>
-            </div>
-            <div class="status-indicator">
-                <span id="ipDisplay" class="ip-display">未设置IP</span>
-                <button class="connect-btn" id="settingsBtn">⚙️ 设置</button>
-                <button class="connect-btn" id="reconnectBtn">🔄 重连</button>
-            </div>
-        </div>
-
-        <!-- 画面区域 -->
-        <div class="screen-section">
-            <div class="live-screen" id="liveScreen">
-                <canvas id="screenCanvas" class="screen-canvas" width="1280" height="720"></canvas>
-                <div class="cursor-overlay">
-                    <div class="remote-cursor" id="remoteCursor" style="left: 50%; top: 50%;"></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 触控板区域 -->
-        <div class="touchpad-section">
-            <div class="panel-title">触控板</div>
-            <div class="touchpad-container">
-                <div class="touchpad-surface" id="touchpadSurface">
-                    <span class="touch-hint" id="touchpadHint">← 滑动移动光标 →</span>
-                </div>
-                <div class="mouse-buttons">
-                    <button class="btn-mouse" id="leftClickBtn">左键</button>
-                    <button class="btn-mouse right" id="rightClickBtn">右键</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- 键盘区域 -->
-        <div class="keyboard-section">
-            <div class="panel-title">键盘</div>
-            <div class="keyboard-grid">
-                <div class="key-row">
-                    <div class="key special" data-key="Escape">Esc</div>
-                    <div class="key special" data-key="Tab">Tab</div>
-                    <div class="key special" data-key="Control">Ctrl</div>
-                    <div class="key special" data-key="Alt">Alt</div>
-                    <div class="key special" data-key="Meta">Win</div>
-                </div>
-                <div class="key-row">
-                    <div class="key" data-key="q">Q</div>
-                    <div class="key" data-key="w">W</div>
-                    <div class="key" data-key="e">E</div>
-                    <div class="key" data-key="r">R</div>
-                    <div class="key" data-key="t">T</div>
-                    <div class="key" data-key="y">Y</div>
-                    <div class="key" data-key="u">U</div>
-                    <div class="key" data-key="i">I</div>
-                    <div class="key" data-key="o">O</div>
-                    <div class="key" data-key="p">P</div>
-                </div>
-                <div class="key-row">
-                    <div class="key" data-key="a">A</div>
-                    <div class="key" data-key="s">S</div>
-                    <div class="key" data-key="d">D</div>
-                    <div class="key" data-key="f">F</div>
-                    <div class="key" data-key="g">G</div>
-                    <div class="key" data-key="h">H</div>
-                    <div class="key" data-key="j">J</div>
-                    <div class="key" data-key="k">K</div>
-                    <div class="key" data-key="l">L</div>
-                </div>
-                <div class="key-row">
-                    <div class="key" data-key="z">Z</div>
-                    <div class="key" data-key="x">X</div>
-                    <div class="key" data-key="c">C</div>
-                    <div class="key" data-key="v">V</div>
-                    <div class="key" data-key="b">B</div>
-                    <div class="key" data-key="n">N</div>
-                    <div class="key" data-key="m">M</div>
-                </div>
-                <div class="key-row">
-                    <div class="key special" data-key="Shift">Shift</div>
-                    <div class="key space" data-key=" ">空格</div>
-                    <div class="key special" data-key="Enter">↵ Enter</div>
-                    <div class="key special" data-key="Backspace">⌫ 删除</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 宏命令 -->
-        <div class="macro-row">
-            <button class="macro-btn" id="screenshotBtn">📸 截屏</button>
-            <button class="macro-btn" id="lockBtn">🔒 锁定电脑</button>
-            <button class="macro-btn red" id="shutdownBtn">⏻ 关机</button>
-        </div>
-    </div>
-
-    <script>
-        // ==================== WebSocket管理器 ====================
-        class WebSocketManager {
-            constructor() {
-                this.ws = null;
-                this.ip = localStorage.getItem('pc-server-ip') || '';
-                this.port = '8080';
-                this.connected = false;
-                this.reconnectAttempts = 0;
-                this.maxReconnectAttempts = 5;
-                this.messageHandlers = new Map();
-                
-                this.init();
+        connect() {
+            if (!this.ip) {
+                this.showToast('请先设置IP地址', '#ffaa00');
+                return;
             }
 
-            init() {
-                // 注册默认处理器
-                this.registerHandler('connected', (data) => {
-                    this.showToast(`✅ 已连接到电脑 (${data.screen.width}x${data.screen.height})`, '#00ffaa');
+            const wsUrl = `ws://${this.ip}:${this.port}`;
+            this.updateStatus('connecting', '连接中...', '#ffaa00');
+            
+            try {
+                this.ws = new WebSocket(wsUrl);
+                
+                this.ws.onopen = () => {
+                    this.connected = true;
+                    this.reconnectAttempts = 0;
+                    this.updateStatus('connected', `已连接 (${this.ip})`, '#1effb0');
+                    this.showToast('✅ 连接成功', '#00ffaa');
                     this.updateControls(true);
-                });
-
-                this.registerHandler('error', (data) => {
-                    this.showToast(`❌ ${data.message}`, '#ff5e6b');
-                });
-
-                this.registerHandler('pong', () => {
-                    console.log('收到心跳响应');
-                });
-
-                // 如果有保存的IP，自动连接
-                if (this.ip) {
-                    setTimeout(() => this.connect(), 1000);
-                }
-            }
-
-            connect() {
-                if (!this.ip) {
-                    this.showToast('请先设置IP地址', '#ffaa00');
-                    return;
-                }
-
-                const wsUrl = `ws://${this.ip}:${this.port}`;
-                this.updateStatus('connecting', '连接中...', '#ffaa00');
+                    this.startHeartbeat();
+                };
                 
-                try {
-                    this.ws = new WebSocket(wsUrl);
-                    
-                    this.ws.onopen = () => {
-                        console.log('WebSocket连接成功');
-                        this.connected = true;
-                        this.reconnectAttempts = 0;
-                        this.updateStatus('connected', `已连接 (${this.ip})`, '#1effb0');
-                        this.showToast('✅ 连接成功', '#00ffaa');
-                        this.updateControls(true);
-                        
-                        // 启动心跳
-                        this.startHeartbeat();
-                    };
-                    
-                    this.ws.onmessage = (event) => {
-                        try {
-                            const data = JSON.parse(event.data);
-                            this.handleMessage(data);
-                        } catch (e) {
-                            console.error('解析消息失败:', e);
-                        }
-                    };
-                    
-                    this.ws.onclose = () => {
-                        console.log('WebSocket断开');
-                        this.connected = false;
-                        this.updateStatus('disconnected', '已断开', '#ff5e6b');
-                        this.updateControls(false);
-                        
-                        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-                            this.reconnectAttempts++;
-                            const delay = 2000 * this.reconnectAttempts;
-                            this.updateStatus('reconnecting', `重连中 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, '#ffaa00');
-                            setTimeout(() => this.connect(), delay);
-                        } else {
-                            this.showToast('❌ 重连失败，请手动重连', '#ff5e6b');
-                        }
-                    };
-                    
-                    this.ws.onerror = (error) => {
-                        console.error('WebSocket错误:', error);
-                        this.showToast('⚠️ 连接错误', '#ffaa00');
-                    };
-                    
-                } catch (error) {
-                    console.error('创建WebSocket失败:', error);
-                    this.showToast('❌ 连接失败', '#ff5e6b');
-                }
-            }
-
-            disconnect() {
-                if (this.ws) {
-                    this.ws.close();
-                    this.ws = null;
+                this.ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        this.handleMessage(data);
+                    } catch (e) {}
+                };
+                
+                this.ws.onclose = () => {
                     this.connected = false;
                     this.updateStatus('disconnected', '已断开', '#ff5e6b');
                     this.updateControls(false);
-                }
-            }
-
-            send(type, data = {}) {
-                if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
-                    this.showToast('⚠️ 未连接到电脑', '#ffaa00');
-                    return false;
-                }
-                
-                const message = {
-                    type: type,
-                    ...data,
-                    timestamp: Date.now()
+                    
+                    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                        this.reconnectAttempts++;
+                        const delay = 2000 * this.reconnectAttempts;
+                        this.updateStatus('reconnecting', `重连中 (${this.reconnectAttempts}/${this.maxReconnectAttempts})`, '#ffaa00');
+                        setTimeout(() => this.connect(), delay);
+                    } else {
+                        this.showToast('❌ 重连失败，请手动重连', '#ff5e6b');
+                    }
                 };
                 
-                try {
-                    this.ws.send(JSON.stringify(message));
-                    return true;
-                } catch (error) {
-                    console.error('发送失败:', error);
-                    return false;
-                }
-            }
-
-            registerHandler(type, handler) {
-                this.messageHandlers.set(type, handler);
-            }
-
-            handleMessage(data) {
-                const handler = this.messageHandlers.get(data.type);
-                if (handler) {
-                    handler(data);
-                }
-            }
-
-            startHeartbeat() {
-                setInterval(() => {
-                    if (this.connected) {
-                        this.send('ping');
-                    }
-                }, 30000);
-            }
-
-            updateStatus(status, text, color) {
-                const led = document.getElementById('statusLed');
-                const statusText = document.getElementById('statusText');
-                const ipDisplay = document.getElementById('ipDisplay');
+                this.ws.onerror = (error) => {
+                    this.showToast('⚠️ 连接错误', '#ffaa00');
+                };
                 
-                if (led) {
-                    led.style.background = color;
-                    led.style.boxShadow = `0 0 20px ${color}`;
-                }
-                if (statusText) {
-                    statusText.textContent = text;
-                }
-                if (ipDisplay && this.ip) {
-                    ipDisplay.textContent = this.ip;
-                }
-            }
-
-            updateControls(enabled) {
-                const elements = document.querySelectorAll('.btn-mouse, .key, .macro-btn');
-                elements.forEach(el => {
-                    if (enabled) {
-                        el.classList.remove('disabled');
-                    } else {
-                        el.classList.add('disabled');
-                    }
-                });
-            }
-
-            showToast(message, color) {
-                const toast = document.getElementById('toast');
-                toast.textContent = message;
-                toast.style.background = color + '20';
-                toast.style.borderColor = color;
-                toast.style.color = color;
-                toast.style.opacity = '1';
-                
-                setTimeout(() => {
-                    toast.style.opacity = '0';
-                }, 2000);
-            }
-
-            setIp(ip) {
-                this.ip = ip;
-                localStorage.setItem('pc-server-ip', ip);
-                document.getElementById('ipDisplay').textContent = ip;
-                this.disconnect();
-                setTimeout(() => this.connect(), 500);
+            } catch (error) {
+                this.showToast('❌ 连接失败', '#ff5e6b');
             }
         }
 
-        // ==================== 初始化 ====================
-        let wsManager;
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            wsManager = new WebSocketManager();
-            
-            // 光标位置
-            let cursorX = 0.5, cursorY = 0.5;
-            const cursor = document.getElementById('remoteCursor');
-            const liveScreen = document.getElementById('liveScreen');
-            
-            function updateCursorPosition(x, y) {
-                const rect = liveScreen.getBoundingClientRect();
-                cursor.style.left = (x * rect.width) + 'px';
-                cursor.style.top = (y * rect.height) + 'px';
+        disconnect() {
+            if (this.ws) {
+                this.ws.close();
+                this.ws = null;
+                this.connected = false;
+                this.updateStatus('disconnected', '已断开', '#ff5e6b');
+                this.updateControls(false);
             }
+        }
+
+        send(type, data = {}) {
+            if (!this.connected || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+                this.showToast('⚠️ 未连接到电脑', '#ffaa00');
+                return false;
+            }
+            const message = { type, ...data, timestamp: Date.now() };
+            try {
+                this.ws.send(JSON.stringify(message));
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        registerHandler(type, handler) {
+            this.messageHandlers.set(type, handler);
+        }
+
+        handleMessage(data) {
+            const handler = this.messageHandlers.get(data.type);
+            if (handler) handler(data);
+        }
+
+        startHeartbeat() {
+            setInterval(() => {
+                if (this.connected) this.send('ping');
+            }, 30000);
+        }
+
+        updateStatus(status, text, color) {
+            const led = document.getElementById('statusLed');
+            const statusText = document.getElementById('statusText');
+            const ipDisplay = document.getElementById('ipDisplay');
             
-            // 触控板事件
-            const touchpad = document.getElementById('touchpadSurface');
-            let isTouching = false;
-            let lastX, lastY;
-            
-            touchpad.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                isTouching = true;
-                lastX = touch.clientX;
-                lastY = touch.clientY;
-                document.getElementById('touchpadHint').textContent = '正在移动...';
+            led.style.background = color;
+            led.style.boxShadow = `0 0 20px ${color}`;
+            statusText.textContent = text;
+            if (this.ip) ipDisplay.textContent = this.ip;
+        }
+
+        updateControls(enabled) {
+            document.querySelectorAll('.btn-mouse, .key, .macro-btn').forEach(el => {
+                el.classList.toggle('disabled', !enabled);
             });
-            
-            touchpad.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                if (!isTouching) return;
-                
-                const touch = e.touches[0];
-                const dx = touch.clientX - lastX;
-                const dy = touch.clientY - lastY;
-                
-                // 发送相对移动
-                wsManager.send('mouse-move', { dx, dy });
-                
-                // 更新光标显示
-                cursorX = Math.min(1, Math.max(0, cursorX + dx * 0.002));
-                cursorY = Math.min(1, Math.max(0, cursorY + dy * 0.002));
-                updateCursorPosition(cursorX, cursorY);
-                
-                lastX = touch.clientX;
-                lastY = touch.clientY;
-            });
-            
-            touchpad.addEventListener('touchend', () => {
-                isTouching = false;
-                document.getElementById('touchpadHint').textContent = '← 滑动移动光标 →';
-            });
-            
-            // 鼠标按钮
-            document.getElementById('leftClickBtn').addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                wsManager.send('mouse-down', { button: 'left' });
-            });
-            
-            document.getElementById('leftClickBtn').addEventListener('touchend', (e) => {
-                e.preventDefault();
-                wsManager.send('mouse-up', { button: 'left' });
-            });
-            
-            document.getElementById('rightClickBtn').addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                wsManager.send('mouse-down', { button: 'right' });
-            });
-            
-            document.getElementById('rightClickBtn').addEventListener('touchend', (e) => {
-                e.preventDefault();
-                wsManager.send('mouse-up', { button: 'right' });
-            });
-            
-            // 键盘按钮
-            document.querySelectorAll('.key').forEach(key => {
-                key.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    const keyVal = key.dataset.key;
-                    wsManager.send('key-down', { key: keyVal });
-                    key.style.transform = 'translateY(6px)';
-                });
-                
-                key.addEventListener('touchend', (e) => {
-                    e.preventDefault();
-                    const keyVal = key.dataset.key;
-                    wsManager.send('key-up', { key: keyVal });
-                    key.style.transform = '';
-                });
-            });
-            
-            // 宏命令
-            document.getElementById('screenshotBtn').addEventListener('click', () => {
-                wsManager.send('screenshot');
-            });
-            
-            document.getElementById('lockBtn').addEventListener('click', () => {
-                wsManager.send('lock');
-            });
-            
-            document.getElementById('shutdownBtn').addEventListener('click', () => {
-                if (confirm('确定要关机吗？')) {
-                    wsManager.send('shutdown');
-                }
-            });
-            
-            // 设置按钮
-            document.getElementById('settingsBtn').addEventListener('click', () => {
-                document.getElementById('ipModal').style.display = 'flex';
-                document.getElementById('ipInput').value = wsManager.ip || '';
-            });
-            
-            document.getElementById('reconnectBtn').addEventListener('click', () => {
-                wsManager.disconnect();
-                setTimeout(() => wsManager.connect(), 1000);
-            });
-            
-            document.getElementById('saveIpBtn').addEventListener('click', () => {
-                const ip = document.getElementById('ipInput').value.trim();
-                if (ip) {
-                    wsManager.setIp(ip);
-                    document.getElementById('ipModal').style.display = 'none';
-                }
-            });
-            
-            document.getElementById('cancelIpBtn').addEventListener('click', () => {
-                document.getElementById('ipModal').style.display = 'none';
-            });
-            
-            // 绘制canvas背景
-            const canvas = document.getElementById('screenCanvas');
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#20a0c0';
-            ctx.font = '24px system-ui';
-            ctx.fillText('等待连接...', 50, 100);
-            
-            // 初始化光标
-            updateCursorPosition(0.5, 0.5);
+        }
+
+        showToast(message, color) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.style.background = color + '20';
+            toast.style.borderColor = color;
+            toast.style.color = color;
+            toast.style.opacity = '1';
+            setTimeout(() => toast.style.opacity = '0', 2000);
+        }
+
+        setIp(ip) {
+            this.ip = ip;
+            localStorage.setItem('pc-server-ip', ip);
+            document.getElementById('ipDisplay').textContent = ip;
+            this.disconnect();
+            setTimeout(() => this.connect(), 500);
+        }
+    }
+
+    // ==================== 初始化 ====================
+    let wsManager;
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        wsManager = new WebSocketManager();
+        
+        const cursor = document.getElementById('remoteCursor');
+        const liveScreen = document.getElementById('liveScreen');
+        const touchpad = document.getElementById('touchpadSurface');
+        const hint = document.getElementById('touchpadHint');
+
+        // 触屏直接移动鼠标（点哪去哪）
+        function setCursor(x, y) {
+            cursor.style.left = x + 'px';
+            cursor.style.top = y + 'px';
+        }
+
+        // 触屏点击 = 直接移动鼠标
+        touchpad.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            const rect = touchpad.getBoundingClientRect();
+            const px = touch.clientX - rect.left;
+            const py = touch.clientY - rect.top;
+
+            // 相对触控板比例
+            const rx = px / rect.width;
+            const ry = py / rect.height;
+
+            // 发送绝对移动
+            wsManager.send('mouse-move-absolute', { rx, ry });
+            setCursor(px, py);
+            hint.textContent = '已移动';
         });
-    </script>
-</body>
-</html>
+
+        touchpad.addEventListener('touchend', () => {
+            hint.textContent = '点哪鼠标去哪';
+        });
+
+        // 鼠标左右键
+        document.getElementById('leftClickBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            wsManager.send('mouse-down', { button: 'left' });
+        });
+        document.getElementById('leftClickBtn').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            wsManager.send('mouse-up', { button: 'left' });
+        });
+
+        document.getElementById('rightClickBtn').addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            wsManager.send('mouse-down', { button: 'right' });
+        });
+        document.getElementById('rightClickBtn').addEventListener('touchend', (e) => {
+            e.preventDefault();
+            wsManager.send('mouse-up', { button: 'right' });
+        });
+
+        // 键盘
+        document.querySelectorAll('.key').forEach(key => {
+            key.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                const k = key.dataset.key;
+                wsManager.send('key-down', { key: k });
+                key.style.transform = 'translateY(6px)';
+            });
+            key.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                const k = key.dataset.key;
+                wsManager.send('key-up', { key: k });
+                key.style.transform = '';
+            });
+        });
+
+        // 宏
+        document.getElementById('screenshotBtn').onclick = () => wsManager.send('screenshot');
+        document.getElementById('lockBtn').onclick = () => wsManager.send('lock');
+        document.getElementById('shutdownBtn').onclick = () => {
+            if (confirm('确定关机？')) wsManager.send('shutdown');
+        };
+
+        // 设置
+        document.getElementById('settingsBtn').onclick = () => {
+            document.getElementById('ipModal').style.display = 'flex';
+            document.getElementById('ipInput').value = wsManager.ip || '';
+        };
+        document.getElementById('reconnectBtn').onclick = () => {
+            wsManager.disconnect();
+            setTimeout(() => wsManager.connect(), 1000);
+        };
+        document.getElementById('saveIpBtn').onclick = () => {
+            const ip = document.getElementById('ipInput').value.trim();
+            if (ip) {
+                wsManager.setIp(ip);
+                document.getElementById('ipModal').style.display = 'none';
+            }
+        };
+        document.getElementById('cancelIpBtn').onclick = () => {
+            document.getElementById('ipModal').style.display = 'none';
+        };
+    });
+</script>
